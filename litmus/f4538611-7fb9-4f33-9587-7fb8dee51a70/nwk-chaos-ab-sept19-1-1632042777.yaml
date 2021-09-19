@@ -1,0 +1,282 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  creationTimestamp: null
+  labels:
+    cluster_id: d76b87cd-9683-4dbc-a745-ecf3c33a1af5
+    subject: nwk-chaos-ab-sept19-1_litmus
+    workflow_id: 7383a9a2-ac52-4904-b483-ff4cf8d29a2e
+    workflows.argoproj.io/controller-instanceid: d76b87cd-9683-4dbc-a745-ecf3c33a1af5
+  name: nwk-chaos-ab-sept19-1-1632042777
+  namespace: litmus
+spec:
+  arguments:
+    parameters:
+    - name: adminModeNamespace
+      value: litmus
+  entrypoint: custom-chaos
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  serviceAccountName: argo-chaos
+  templates:
+  - arguments: {}
+    inputs: {}
+    metadata: {}
+    name: custom-chaos
+    outputs: {}
+    steps:
+    - - arguments: {}
+        name: install-chaos-experiments
+        template: install-chaos-experiments
+    - - arguments: {}
+        name: run-benchmark
+        template: run-benchmark
+      - arguments: {}
+        name: pod-network-latency
+        template: pod-network-latency
+  - arguments: {}
+    container:
+      args:
+      - kubectl apply -f /tmp/pod-network-latency.yaml -n {{workflow.parameters.adminModeNamespace}} |  sleep 30
+      command:
+      - sh
+      - -c
+      image: litmuschaos/k8s:latest
+      name: ""
+      resources: {}
+    inputs:
+      artifacts:
+      - name: pod-network-latency
+        path: /tmp/pod-network-latency.yaml
+        raw:
+          data: |
+            apiVersion: litmuschaos.io/v1alpha1
+            description:
+              message: |
+                Injects network latency on pods belonging to an app deployment
+            kind: ChaosExperiment
+            metadata:
+              name: pod-network-latency
+              labels:
+                name: pod-network-latency
+                app.kubernetes.io/part-of: litmus
+                app.kubernetes.io/component: chaosexperiment
+                app.kubernetes.io/version: 2.0.0
+            spec:
+              definition:
+                scope: Namespaced
+                permissions:
+                  - apiGroups:
+                      - ""
+                      - batch
+                      - apps
+                      - apps.openshift.io
+                      - argoproj.io
+                      - litmuschaos.io
+                    resources:
+                      - jobs
+                      - pods
+                      - pods/log
+                      - replicationcontrollers
+                      - deployments
+                      - statefulsets
+                      - daemonsets
+                      - replicasets
+                      - deploymentconfigs
+                      - rollouts
+                      - pods/exec
+                      - events
+                      - chaosengines
+                      - chaosexperiments
+                      - chaosresults
+                    verbs:
+                      - create
+                      - list
+                      - get
+                      - patch
+                      - update
+                      - delete
+                      - deletecollection
+                image: litmuschaos/go-runner:2.0.0
+                imagePullPolicy: Always
+                args:
+                  - -c
+                  - ./experiments -name pod-network-latency
+                command:
+                  - /bin/bash
+                env:
+                  - name: TARGET_CONTAINER
+                    value: ""
+                  - name: NETWORK_INTERFACE
+                    value: eth0
+                  - name: LIB_IMAGE
+                    value: litmuschaos/go-runner:2.0.0
+                  - name: TC_IMAGE
+                    value: gaiadocker/iproute2
+                  - name: NETWORK_LATENCY
+                    value: "2000"
+                  - name: TOTAL_CHAOS_DURATION
+                    value: "60"
+                  - name: RAMP_TIME
+                    value: ""
+                  - name: LIB
+                    value: litmus
+                  - name: PODS_AFFECTED_PERC
+                    value: "100"
+                  - name: TARGET_PODS
+                    value: ""
+                  - name: CONTAINER_RUNTIME
+                    value: containerd
+                  - name: DESTINATION_IPS
+                    value: ""
+                  - name: DESTINATION_HOSTS
+                    value: ""
+                  - name: SOCKET_PATH
+                    value: /run/containerd/containerd.sock
+                  - name: SEQUENCE
+                    value: parallel
+                labels:
+                  name: pod-network-latency
+                  app.kubernetes.io/part-of: litmus
+                  app.kubernetes.io/component: experiment-job
+                  app.kubernetes.io/version: 2.0.0
+    metadata: {}
+    name: install-chaos-experiments
+    outputs: {}
+  - arguments: {}
+    container:
+      args:
+      - -file=/tmp/chaosengine-pod-network-latency.yaml
+      - -saveName=/tmp/engine-name
+      image: litmuschaos/litmus-checker:latest
+      name: ""
+      resources: {}
+    inputs:
+      artifacts:
+      - name: pod-network-latency
+        path: /tmp/chaosengine-pod-network-latency.yaml
+        raw:
+          data: |
+            apiVersion: litmuschaos.io/v1alpha1
+            kind: ChaosEngine
+            metadata:
+              namespace: "{{workflow.parameters.adminModeNamespace}}"
+              generateName: pod-network-latency
+              labels:
+                instance_id: 8f9c9e88-b05c-4af2-b01e-d0e423d7bb79
+                context: pod-network-latency_litmus
+                workflow_name: nwk-chaos-ab-sept19-1-1632042777
+            spec:
+              jobCleanUpPolicy: retain
+              engineState: active
+              appinfo:
+                appns: sock-shop
+                applabel: name=catalogue
+                appkind: deployment
+              chaosServiceAccount: litmus-admin
+              experiments:
+                - name: pod-network-latency
+                  spec:
+                    components:
+                      env:
+                        - name: TOTAL_CHAOS_DURATION
+                          value: "120"
+                        - name: NETWORK_LATENCY
+                          value: "2000"
+                        - name: CONTAINER_RUNTIME
+                          value: containerd
+                        - name: SOCKET_PATH
+                          value: /run/containerd/containerd.sock
+                        - name: PODS_AFFECTED_PERC
+                          value: "100"
+                    probe:
+                      - name: cmdProbeTest
+                        type: cmdProbe
+                        mode: EOT
+                        runProperties:
+                          probeTimeout: 5
+                          retry: 2
+                          interval: 5
+                          initialDelaySeconds: 3
+                          stopOnFailure: false
+                        cmdProbe/inputs:
+                          command: kubectl get pods -n litmus -o
+                            jsonpath='{.items[?(@.metadata.labels.app==
+                            "tenant-bench")].metadata.name}' | xargs kubectl logs -n litmus
+                            |grep 'Failed request' | tr -dc '0-9'
+                          source: inline
+                          comparator:
+                            type: int
+                            criteria: <
+                            value: "1000"
+                      - name: deploymentGateProbe
+                        type: cmdProbe
+                        mode: EOT
+                        runProperties:
+                          probeTimeout: 10
+                          retry: 1
+                          interval: 5
+                          initialDelaySeconds: 5
+                          stopOnFailure: false
+                        cmdProbe/inputs:
+                          command: if [ {{.cmdProbeTest.ProbeArtifacts.Register }} -le 500 ] ; then echo
+                            "success" ; else echo "failure" ; fi
+                          source: inline
+                          comparator:
+                            type: string
+                            criteria: contains
+                            value: success
+              annotationCheck: "false"
+    metadata:
+      labels:
+        weight: "10"
+    name: pod-network-latency
+    outputs: {}
+  - arguments: {}
+    container:
+      args:
+      - kubectl create -f /tmp/bench.yaml -n {{workflow.parameters.adminModeNamespace}}
+      command:
+      - sh
+      - -c
+      image: lachlanevenson/k8s-kubectl
+      name: ""
+      resources: {}
+    inputs:
+      artifacts:
+      - name: run-benchmark
+        path: /tmp/bench.yaml
+        raw:
+          data: |
+            apiVersion: batch/v1
+            kind: Job
+            metadata:
+              generateName: tenant-bench
+              labels:
+                app: tenant-bench
+            spec:
+              template:
+                metadata:
+                  labels:
+                    app: tenant-bench
+                spec:
+                  restartPolicy: Never
+                  containers:
+                    - args:
+                        - -c
+                        - sleep 45; /go/bin/main -r -c 1 -t 120 -n 1000
+                          http://catalogue.sock-shop/catalogue ; /go/bin/main -r -c 1 -t 120
+                          -n 1000 http://catalogue.sock-shop/catalogue ; /go/bin/main -r -c
+                          10 -t 12 -n 1000 http://catalogue.sock-shop/catalogue ;exit 0
+                      command:
+                        - /bin/sh
+                      image: devth/alpine-bench
+                      imagePullPolicy: Always
+                      name: nginx-bench
+    metadata: {}
+    name: run-benchmark
+    outputs: {}
+status:
+  finishedAt: null
+  startedAt: null
