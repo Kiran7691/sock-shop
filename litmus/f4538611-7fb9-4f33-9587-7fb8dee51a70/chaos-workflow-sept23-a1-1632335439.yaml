@@ -485,13 +485,13 @@ spec:
                         mode: EOT
                         runProperties:
                           probeTimeout: 10
-                          retry: 1
+                          retry: 0
                           interval: 5
                           initialDelaySeconds: 5
                           stopOnFailure: false
                         cmdProbe/inputs:
                           command: if [ {{.cmdProbeTest.ProbeArtifacts.Register }} -le 20 ] ; then echo
-                            "success" ; else echo {{.cmdProbeTest.ProbeArtifacts.Register }}
+                            "success" ; else kubectl rollout undo deployment.v1.apps/carts -n sock-shop
                             ; fi
                           source: inline
                           comparator:
